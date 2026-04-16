@@ -3,7 +3,46 @@
 import { useState, useRef } from "react";
 import { submitRegistration } from "@/lib/actions/registrations";
 import { useRouter } from "next/navigation";
-import { Upload, X, CheckCircle, Lock } from "lucide-react";
+import { Upload, X, CheckCircle, Lock, Sparkles } from "lucide-react";
+
+type OcrFields = {
+  fullName: string;
+  nationality: string;
+  passportNumber: string;
+  passportExpiry: string;
+  dateOfBirth: string;
+  gender: "male" | "female" | "other" | "";
+};
+
+const EMPTY_OCR: OcrFields = {
+  fullName: "",
+  nationality: "",
+  passportNumber: "",
+  passportExpiry: "",
+  dateOfBirth: "",
+  gender: "",
+};
+
+async function preprocessImage(file: File, maxDim = 1024, quality = 0.82): Promise<Blob> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not available");
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+      "image/jpeg",
+      quality,
+    );
+  });
+}
 
 const NATIONALITIES = [
   "Tunisian","Algerian","Libyan","Moroccan","Egyptian","French","German","Italian",
@@ -26,6 +65,10 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoKey, setPhotoKey] = useState("");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [ocr, setOcr] = useState<OcrFields>(EMPTY_OCR);
+  const [ocrState, setOcrState] = useState<"idle" | "reading" | "done" | "failed">("idle");
+  const [ocrMsg, setOcrMsg] = useState("");
+  const [formKey, setFormKey] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const inputStyle: React.CSSProperties = {
@@ -64,17 +107,33 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Preview
-    const reader = new FileReader();
-    reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    const isImage = file.type.startsWith("image/");
 
-    // Upload
+    // Client-side resize + EXIF rotation (images only; PDFs are uploaded as-is)
+    let uploadFile: File | Blob = file;
+    if (isImage) {
+      try {
+        uploadFile = await preprocessImage(file);
+      } catch {
+        // fall back to original on any canvas error
+        uploadFile = file;
+      }
+    }
+
+    // Preview from the (possibly processed) image
+    if (isImage) {
+      const url = URL.createObjectURL(uploadFile);
+      setPhotoPreview(url);
+    } else {
+      setPhotoPreview("pdf");
+    }
+
+    // Upload to Blob
     setUploadProgress("uploading");
-    const fd = new FormData();
-    fd.append("file", file);
-
+    setError("");
     try {
+      const fd = new FormData();
+      fd.append("file", uploadFile, isImage ? "passport.jpg" : file.name);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Upload failed");
@@ -85,8 +144,43 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       setError(err instanceof Error ? err.message : "Upload failed");
       setUploadProgress("idle");
       setPhotoPreview(null);
+      return;
+    }
+
+    // OCR (images only)
+    if (!isImage) return;
+    setOcrState("reading");
+    setOcrMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("file", uploadFile, "passport.jpg");
+      fd.append("checkinLinkId", checkinLinkId);
+      const res = await fetch("/api/passport-ocr", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        setOcrState("failed");
+        setOcrMsg(data.error ?? "Could not read passport.");
+        return;
+      }
+      setOcr({
+        fullName: data.fullName ?? "",
+        nationality: data.nationality ?? "",
+        passportNumber: data.passportNumber ?? "",
+        passportExpiry: data.passportExpiry ?? "",
+        dateOfBirth: data.dateOfBirth ?? "",
+        gender: (data.gender ?? "") as OcrFields["gender"],
+      });
+      setFormKey((k) => k + 1); // re-mount inputs so defaultValues apply
+      setOcrState("done");
+    } catch {
+      setOcrState("failed");
+      setOcrMsg("Network error while reading passport.");
     }
   }
+
+  const nationalityOptions = ocr.nationality && !NATIONALITIES.includes(ocr.nationality)
+    ? [ocr.nationality, ...NATIONALITIES]
+    : NATIONALITIES;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -131,7 +225,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <label style={labelStyle}>Full Name *</label>
-            <input name="fullName" required placeholder="As it appears on your passport" style={inputStyle}
+            <input key={`n-${formKey}`} name="fullName" required defaultValue={ocr.fullName} placeholder="As it appears on your passport" style={inputStyle}
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
             />
@@ -140,16 +234,16 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Nationality *</label>
-              <select name="nationality" required style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+              <select key={`nat-${formKey}`} name="nationality" required defaultValue={ocr.nationality} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Select…</option>
-                {NATIONALITIES.map((n) => (
+                {nationalityOptions.map((n) => (
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
             </div>
             <div>
               <label style={labelStyle}>Gender *</label>
-              <select name="gender" required style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
+              <select key={`g-${formKey}`} name="gender" required defaultValue={ocr.gender} style={{ ...inputStyle, appearance: "none", cursor: "pointer" }}>
                 <option value="">Select…</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
@@ -161,14 +255,14 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Passport Number *</label>
-              <input name="passportNumber" required placeholder="e.g. TN8823401" style={inputStyle}
+              <input key={`pn-${formKey}`} name="passportNumber" required defaultValue={ocr.passportNumber} placeholder="e.g. TN8823401" style={inputStyle}
                 onFocus={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               />
             </div>
             <div>
               <label style={labelStyle}>Passport Expiry *</label>
-              <input name="passportExpiry" type="date" required style={inputStyle}
+              <input key={`pe-${formKey}`} name="passportExpiry" type="date" required defaultValue={ocr.passportExpiry} style={inputStyle}
                 onFocus={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               />
@@ -177,7 +271,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
 
           <div>
             <label style={labelStyle}>Date of Birth *</label>
-            <input name="dateOfBirth" type="date" required style={inputStyle}
+            <input key={`dob-${formKey}`} name="dateOfBirth" type="date" required defaultValue={ocr.dateOfBirth} style={inputStyle}
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
             />
@@ -246,7 +340,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
           Passport Photo
         </h3>
         <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          Upload a clear photo of your passport data page (JPEG, PNG, or PDF, max 10 MB).
+          Upload a clear photo of your passport data page. We&apos;ll try to read it automatically — please verify the fields before submitting.
         </p>
 
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
@@ -260,7 +354,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
                 <CheckCircle size={14} color="#fff" />
               </div>
             )}
-            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); if (fileRef.current) fileRef.current.value = ""; }}
+            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); setOcrState("idle"); setOcr(EMPTY_OCR); setFormKey((k) => k + 1); if (fileRef.current) fileRef.current.value = ""; }}
               style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
             >
               <X size={12} color="#fff" />
@@ -277,6 +371,36 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
               {uploadProgress === "uploading" ? "Uploading…" : "Tap to upload passport photo"}
             </span>
           </button>
+        )}
+
+        {(ocrState === "reading" || ocrState === "done" || ocrState === "failed") && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background:
+                ocrState === "done"
+                  ? "rgba(30,58,47,0.06)"
+                  : ocrState === "failed"
+                  ? "rgba(196,98,45,0.08)"
+                  : "rgba(30,58,47,0.04)",
+              border:
+                ocrState === "failed"
+                  ? "1px solid rgba(196,98,45,0.2)"
+                  : "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <Sparkles size={16} color={ocrState === "failed" ? "var(--terracotta)" : "var(--olive)"} />
+            <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>
+              {ocrState === "reading" && "Reading passport…"}
+              {ocrState === "done" && "Fields filled from your passport — please verify before submitting."}
+              {ocrState === "failed" && (ocrMsg || "Could not read passport. Please fill the fields manually.")}
+            </span>
+          </div>
         )}
       </div>
 
