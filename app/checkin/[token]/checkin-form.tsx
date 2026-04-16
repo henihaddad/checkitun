@@ -69,8 +69,9 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
   const [ocrState, setOcrState] = useState<"idle" | "reading" | "done" | "failed">("idle");
   const [ocrMsg, setOcrMsg] = useState("");
   const [formKey, setFormKey] = useState(0);
-  const [revealForm, setRevealForm] = useState(false);
+  const [step, setStep] = useState<"upload" | "identity" | "details">("upload");
   const fileRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -161,7 +162,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       if (!res.ok) {
         setOcrState("failed");
         setOcrMsg(data.error ?? "Could not read passport.");
-        setRevealForm(true);
+        setStep("identity");
         return;
       }
       setOcr({
@@ -174,11 +175,11 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       });
       setFormKey((k) => k + 1); // re-mount inputs so defaultValues apply
       setOcrState("done");
-      setRevealForm(true);
+      setStep("identity");
     } catch {
       setOcrState("failed");
       setOcrMsg("Network error while reading passport.");
-      setRevealForm(true);
+      setStep("identity");
     }
   }
 
@@ -220,16 +221,16 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} ref={formRef}>
       {/* Passport photo — always first, drives the flow */}
       <div style={sectionStyle}>
         <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>
-          {revealForm ? "Passport Photo" : "Start with your passport"}
+          {step === "upload" ? "Start with your passport" : "Passport Photo"}
         </h3>
         <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          {revealForm
-            ? "We read this automatically — please verify the fields below before submitting."
-            : "Snap a photo of your passport data page and we'll fill the form for you."}
+          {step === "upload"
+            ? "Snap a photo of your passport data page and we'll fill the form for you."
+            : "We read this automatically — please verify the fields below."}
         </p>
 
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
@@ -247,7 +248,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
                 <CheckCircle size={14} color="#fff" />
               </div>
             )}
-            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); setOcrState("idle"); setOcr(EMPTY_OCR); setFormKey((k) => k + 1); setRevealForm(false); if (fileRef.current) fileRef.current.value = ""; }}
+            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); setOcrState("idle"); setOcr(EMPTY_OCR); setFormKey((k) => k + 1); setStep("upload"); if (fileRef.current) fileRef.current.value = ""; }}
               style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
             >
               <X size={12} color="#fff" />
@@ -297,10 +298,10 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
           </div>
         )}
 
-        {!revealForm && (
+        {step === "upload" && (
           <button
             type="button"
-            onClick={() => setRevealForm(true)}
+            onClick={() => setStep("identity")}
             style={{
               marginTop: 16,
               width: "100%",
@@ -321,7 +322,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
         )}
       </div>
 
-      {revealForm && (
+      {step !== "upload" && (
       <>
       {/* Identity */}
       <div style={sectionStyle}>
@@ -385,6 +386,34 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
         </div>
       </div>
 
+      {step === "identity" && (
+        <button
+          type="button"
+          onClick={() => {
+            // Require the identity fields before advancing
+            if (!formRef.current?.reportValidity()) return;
+            setStep("details");
+          }}
+          style={{
+            width: "100%",
+            padding: "16px",
+            borderRadius: 12,
+            border: "none",
+            background: "var(--olive)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 16,
+            cursor: "pointer",
+            fontFamily: "DM Sans, sans-serif",
+            marginBottom: 20,
+          }}
+        >
+          Confirm details →
+        </button>
+      )}
+
+      {step === "details" && (
+      <>
       {/* Contact */}
       <div style={sectionStyle}>
         <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 20 }}>
@@ -441,6 +470,8 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       </div>
       </>
       )}
+      </>
+      )}
 
       {error && (
         <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(196,98,45,0.08)", border: "1px solid rgba(196,98,45,0.2)", marginBottom: 16 }}>
@@ -448,7 +479,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
         </div>
       )}
 
-      {revealForm && (
+      {step === "details" && (
       <button
         type="submit"
         disabled={loading || uploadProgress === "uploading"}
