@@ -1,7 +1,7 @@
 import { put } from "@vercel/blob";
 import { NextRequest } from "next/server";
 
-const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
+const ALLOWED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     if (!ALLOWED_TYPES.includes(file.type)) {
       return Response.json(
-        { error: "File type not allowed. Use JPEG, PNG, WebP, or PDF." },
+        { error: "File type not allowed. Use JPEG, PNG, or WebP." },
         { status: 400 }
       );
     }

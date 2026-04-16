@@ -109,33 +109,27 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isImage = file.type.startsWith("image/");
-
-    // Client-side resize + EXIF rotation (images only; PDFs are uploaded as-is)
-    let uploadFile: File | Blob = file;
-    if (isImage) {
-      try {
-        uploadFile = await preprocessImage(file);
-      } catch {
-        // fall back to original on any canvas error
-        uploadFile = file;
-      }
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload a photo of your passport (JPEG, PNG, or WebP).");
+      return;
     }
 
-    // Preview from the (possibly processed) image
-    if (isImage) {
-      const url = URL.createObjectURL(uploadFile);
-      setPhotoPreview(url);
-    } else {
-      setPhotoPreview("pdf");
+    // Client-side resize + EXIF rotation
+    let uploadFile: Blob = file;
+    try {
+      uploadFile = await preprocessImage(file);
+    } catch {
+      uploadFile = file; // fall back to original on canvas error
     }
+
+    setPhotoPreview(URL.createObjectURL(uploadFile));
 
     // Upload to Blob
     setUploadProgress("uploading");
     setError("");
     try {
       const fd = new FormData();
-      fd.append("file", uploadFile, isImage ? "passport.jpg" : file.name);
+      fd.append("file", uploadFile, "passport.jpg");
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Upload failed");
@@ -149,8 +143,6 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       return;
     }
 
-    // OCR (images only)
-    if (!isImage) return;
     setOcrState("reading");
     setOcrMsg("");
     try {
@@ -233,16 +225,12 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
             : "We read this automatically — please verify the fields below."}
         </p>
 
-        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} style={{ display: "none" }} />
 
         {photoPreview ? (
           <div style={{ position: "relative", display: "inline-block" }}>
-            {photoPreview === "pdf" ? (
-              <div style={{ padding: 32, background: "var(--sand)", borderRadius: 10, fontSize: 13, color: "var(--muted)" }}>PDF uploaded</div>
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={photoPreview} alt="Passport preview" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 10, objectFit: "cover", display: "block" }} />
-            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoPreview} alt="Passport preview" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 10, objectFit: "cover", display: "block" }} />
             {uploadProgress === "done" && (
               <div style={{ position: "absolute", top: 8, right: 8, background: "#4ade80", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <CheckCircle size={14} color="#fff" />
@@ -264,7 +252,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
             <span style={{ fontSize: 15, color: "var(--muted)", fontFamily: "DM Sans, sans-serif", fontWeight: 500 }}>
               {uploadProgress === "uploading" ? "Uploading…" : "Tap to upload passport photo"}
             </span>
-            <span style={{ fontSize: 12, color: "var(--muted)", opacity: 0.8 }}>JPEG, PNG, or PDF · max 10 MB</span>
+            <span style={{ fontSize: 12, color: "var(--muted)", opacity: 0.8 }}>JPEG, PNG, or WebP · max 10 MB</span>
           </button>
         )}
 
