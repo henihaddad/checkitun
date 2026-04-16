@@ -1,7 +1,7 @@
 import { getRegistration } from "@/lib/actions/registrations";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileImage, ExternalLink } from "lucide-react";
+import { ArrowLeft, FileImage, ExternalLink, FileDown } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -21,10 +21,18 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
   if (!reg) notFound();
 
   return (
-    <div style={{ padding: "40px 40px 60px", maxWidth: 900 }}>
-      <Link href="/dashboard/guests" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13, textDecoration: "none", marginBottom: 28, fontWeight: 500 }}>
-        <ArrowLeft size={14} /> Back to guests
-      </Link>
+    <div className="guest-detail-wrap" style={{ padding: "40px 40px 60px", maxWidth: 900 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28, gap: 12, flexWrap: "wrap" }}>
+        <Link href="/dashboard/guests" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13, textDecoration: "none", fontWeight: 500 }}>
+          <ArrowLeft size={14} /> Back to guests
+        </Link>
+        <a
+          href={`/api/fiche/${reg.id}`}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 10, border: "1.5px solid var(--olive)", background: "var(--olive)", color: "#fff", textDecoration: "none", fontSize: 13, fontWeight: 600 }}
+        >
+          <FileDown size={14} /> Export Fiche de Police
+        </a>
+      </div>
 
       {/* Header */}
       <div style={{ marginBottom: 36 }}>
@@ -38,7 +46,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div className="guest-detail-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         {/* Identity */}
         <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 20, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
@@ -46,11 +54,11 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Field label="Full Name" value={reg.fullName} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="field-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <Field label="Nationality" value={reg.nationality} />
               <Field label="Gender" value={reg.gender} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="field-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <Field label="Passport Number" value={reg.passportNumber} />
               <Field label="Passport Expiry" value={formatDate(reg.passportExpiry)} />
             </div>
@@ -75,7 +83,7 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
               Stay Details
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div className="field-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <Field label="Arrival" value={formatDate(reg.arrivalDate)} />
                 <Field label="Departure" value={formatDate(reg.departureDate)} />
               </div>
@@ -135,6 +143,13 @@ export default async function GuestDetailPage({ params }: { params: Promise<{ id
           </div>
         </div>
       </div>
+      <style>{`
+        @media(max-width:768px){
+          .guest-detail-wrap{padding:20px 16px 40px!important}
+          .guest-detail-grid{grid-template-columns:1fr!important}
+          .field-2col{grid-template-columns:1fr 1fr}
+        }
+      `}</style>
     </div>
   );
 }
