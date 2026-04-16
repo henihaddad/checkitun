@@ -192,5 +192,60 @@ export async function buildFichePdf(data: FicheData): Promise<Uint8Array> {
   y -= 11;
   page.drawText(footer2, { x: margin, y, size: 8, font: italic, color: muted });
 
+  // Page 2 — passport photo (if available)
+  if (data.passportPhotoUrl) {
+    try {
+      const res = await fetch(data.passportPhotoUrl, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const buf = new Uint8Array(await res.arrayBuffer());
+        const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+        const looksPng = ct.includes("png") || (buf[0] === 0x89 && buf[1] === 0x50);
+        const img = looksPng ? await pdf.embedPng(buf) : await pdf.embedJpg(buf);
+
+        const p2 = pdf.addPage([595.28, 841.89]);
+        const pw = p2.getWidth();
+        const ph = p2.getHeight();
+
+        // Header
+        p2.drawText(`Passeport / Passport — ${data.fullName}`, {
+          x: margin,
+          y: ph - margin,
+          size: 12,
+          font: bold,
+          color: ink,
+        });
+        p2.drawText(`Passeport n° ${data.passportNumber} · ${data.nationality}`, {
+          x: margin,
+          y: ph - margin - 16,
+          size: 9,
+          font,
+          color: muted,
+        });
+
+        // Fit image within available area, preserve aspect
+        const boxX = margin;
+        const boxY = margin + 40;
+        const boxW = pw - margin * 2;
+        const boxH = ph - margin - 40 - (margin + 40);
+        const scale = Math.min(boxW / img.width, boxH / img.height);
+        const drawW = img.width * scale;
+        const drawH = img.height * scale;
+        const drawX = boxX + (boxW - drawW) / 2;
+        const drawY = boxY + (boxH - drawH) / 2;
+
+        p2.drawImage(img, { x: drawX, y: drawY, width: drawW, height: drawH });
+
+        // Footer note
+        p2.drawText(
+          "Document joint pour vérification par les autorités. Attached for verification by the authorities.",
+          { x: margin, y: margin, size: 8, font: italic, color: muted },
+        );
+      }
+    } catch (err) {
+      console.error("fiche: could not embed passport photo", err);
+      // Swallow — PDF still useful without photo
+    }
+  }
+
   return pdf.save();
 }

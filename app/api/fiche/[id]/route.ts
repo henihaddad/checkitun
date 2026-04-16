@@ -49,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     propertyName: reg.property.name,
     propertyCity: reg.property.city,
     submittedAt: reg.submittedAt,
+    passportPhotoUrl: reg.passportPhotoUrl,
   });
 
   const filename = `fiche-${slug(reg.fullName)}-${reg.id.slice(0, 8)}.pdf`;
