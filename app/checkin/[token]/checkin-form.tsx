@@ -69,6 +69,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
   const [ocrState, setOcrState] = useState<"idle" | "reading" | "done" | "failed">("idle");
   const [ocrMsg, setOcrMsg] = useState("");
   const [formKey, setFormKey] = useState(0);
+  const [revealForm, setRevealForm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const inputStyle: React.CSSProperties = {
@@ -160,6 +161,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       if (!res.ok) {
         setOcrState("failed");
         setOcrMsg(data.error ?? "Could not read passport.");
+        setRevealForm(true);
         return;
       }
       setOcr({
@@ -172,9 +174,11 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       });
       setFormKey((k) => k + 1); // re-mount inputs so defaultValues apply
       setOcrState("done");
+      setRevealForm(true);
     } catch {
       setOcrState("failed");
       setOcrMsg("Network error while reading passport.");
+      setRevealForm(true);
     }
   }
 
@@ -217,6 +221,108 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
 
   return (
     <form onSubmit={handleSubmit}>
+      {/* Passport photo — always first, drives the flow */}
+      <div style={sectionStyle}>
+        <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>
+          {revealForm ? "Passport Photo" : "Start with your passport"}
+        </h3>
+        <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
+          {revealForm
+            ? "We read this automatically — please verify the fields below before submitting."
+            : "Snap a photo of your passport data page and we'll fill the form for you."}
+        </p>
+
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
+
+        {photoPreview ? (
+          <div style={{ position: "relative", display: "inline-block" }}>
+            {photoPreview === "pdf" ? (
+              <div style={{ padding: 32, background: "var(--sand)", borderRadius: 10, fontSize: 13, color: "var(--muted)" }}>PDF uploaded</div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoPreview} alt="Passport preview" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 10, objectFit: "cover", display: "block" }} />
+            )}
+            {uploadProgress === "done" && (
+              <div style={{ position: "absolute", top: 8, right: 8, background: "#4ade80", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <CheckCircle size={14} color="#fff" />
+              </div>
+            )}
+            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); setOcrState("idle"); setOcr(EMPTY_OCR); setFormKey((k) => k + 1); setRevealForm(false); if (fileRef.current) fileRef.current.value = ""; }}
+              style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <X size={12} color="#fff" />
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => fileRef.current?.click()}
+            style={{ width: "100%", padding: "36px 20px", borderRadius: 12, border: "2px dashed var(--border)", background: "var(--sand)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, transition: "border-color 0.2s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+          >
+            <Upload size={26} color="var(--muted)" />
+            <span style={{ fontSize: 15, color: "var(--muted)", fontFamily: "DM Sans, sans-serif", fontWeight: 500 }}>
+              {uploadProgress === "uploading" ? "Uploading…" : "Tap to upload passport photo"}
+            </span>
+            <span style={{ fontSize: 12, color: "var(--muted)", opacity: 0.8 }}>JPEG, PNG, or PDF · max 10 MB</span>
+          </button>
+        )}
+
+        {(ocrState === "reading" || ocrState === "done" || ocrState === "failed") && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background:
+                ocrState === "done"
+                  ? "rgba(30,58,47,0.06)"
+                  : ocrState === "failed"
+                  ? "rgba(196,98,45,0.08)"
+                  : "rgba(30,58,47,0.04)",
+              border:
+                ocrState === "failed"
+                  ? "1px solid rgba(196,98,45,0.2)"
+                  : "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <Sparkles size={16} color={ocrState === "failed" ? "var(--terracotta)" : "var(--olive)"} />
+            <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>
+              {ocrState === "reading" && "Reading passport…"}
+              {ocrState === "done" && "Fields filled from your passport — please verify them below."}
+              {ocrState === "failed" && (ocrMsg || "Could not read passport. Please fill the fields below manually.")}
+            </span>
+          </div>
+        )}
+
+        {!revealForm && (
+          <button
+            type="button"
+            onClick={() => setRevealForm(true)}
+            style={{
+              marginTop: 16,
+              width: "100%",
+              padding: "12px",
+              borderRadius: 10,
+              border: "none",
+              background: "transparent",
+              color: "var(--muted)",
+              fontSize: 13,
+              fontFamily: "DM Sans, sans-serif",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textUnderlineOffset: 3,
+            }}
+          >
+            Or fill the form manually
+          </button>
+        )}
+      </div>
+
+      {revealForm && (
+      <>
       {/* Identity */}
       <div style={sectionStyle}>
         <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 20 }}>
@@ -333,76 +439,8 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
           </div>
         </div>
       </div>
-
-      {/* Passport photo */}
-      <div style={sectionStyle}>
-        <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>
-          Passport Photo
-        </h3>
-        <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          Upload a clear photo of your passport data page. We&apos;ll try to read it automatically — please verify the fields before submitting.
-        </p>
-
-        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
-
-        {photoPreview ? (
-          <div style={{ position: "relative", display: "inline-block" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photoPreview} alt="Passport preview" style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 10, objectFit: "cover", display: "block" }} />
-            {uploadProgress === "done" && (
-              <div style={{ position: "absolute", top: 8, right: 8, background: "#4ade80", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <CheckCircle size={14} color="#fff" />
-              </div>
-            )}
-            <button type="button" onClick={() => { setPhotoPreview(null); setPhotoUrl(""); setPhotoKey(""); setUploadProgress("idle"); setOcrState("idle"); setOcr(EMPTY_OCR); setFormKey((k) => k + 1); if (fileRef.current) fileRef.current.value = ""; }}
-              style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-            >
-              <X size={12} color="#fff" />
-            </button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => fileRef.current?.click()}
-            style={{ width: "100%", padding: "28px 20px", borderRadius: 12, border: "2px dashed var(--border)", background: "var(--sand)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, transition: "border-color 0.2s" }}
-            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--olive)")}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
-          >
-            <Upload size={22} color="var(--muted)" />
-            <span style={{ fontSize: 14, color: "var(--muted)", fontFamily: "DM Sans, sans-serif" }}>
-              {uploadProgress === "uploading" ? "Uploading…" : "Tap to upload passport photo"}
-            </span>
-          </button>
-        )}
-
-        {(ocrState === "reading" || ocrState === "done" || ocrState === "failed") && (
-          <div
-            style={{
-              marginTop: 14,
-              padding: "12px 14px",
-              borderRadius: 10,
-              background:
-                ocrState === "done"
-                  ? "rgba(30,58,47,0.06)"
-                  : ocrState === "failed"
-                  ? "rgba(196,98,45,0.08)"
-                  : "rgba(30,58,47,0.04)",
-              border:
-                ocrState === "failed"
-                  ? "1px solid rgba(196,98,45,0.2)"
-                  : "1px solid var(--border)",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <Sparkles size={16} color={ocrState === "failed" ? "var(--terracotta)" : "var(--olive)"} />
-            <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>
-              {ocrState === "reading" && "Reading passport…"}
-              {ocrState === "done" && "Fields filled from your passport — please verify before submitting."}
-              {ocrState === "failed" && (ocrMsg || "Could not read passport. Please fill the fields manually.")}
-            </span>
-          </div>
-        )}
-      </div>
+      </>
+      )}
 
       {error && (
         <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(196,98,45,0.08)", border: "1px solid rgba(196,98,45,0.2)", marginBottom: 16 }}>
@@ -410,6 +448,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
         </div>
       )}
 
+      {revealForm && (
       <button
         type="submit"
         disabled={loading || uploadProgress === "uploading"}
@@ -430,6 +469,7 @@ export function CheckinForm({ checkinLinkId, propertyId, token }: Props) {
       >
         {loading ? "Submitting…" : "Complete Check-in →"}
       </button>
+      )}
 
       {/* Security note */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--muted)", fontSize: 12 }}>
